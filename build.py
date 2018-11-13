@@ -36,15 +36,34 @@ def compile_python(module, loc):
 
 
 GRADLE_TEMPLATE = """
+apply plugin: 'java'
 apply plugin: 'com.google.protobuf'
+
+repositories {
+  maven { url "https://plugins.gradle.org/m2/" }
+}
 
 buildscript {
   repositories {
+    maven { url "https://plugins.gradle.org/m2/" }
     jcenter()
   }
   dependencies {
     classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.7'
   }
+}
+
+dependencies {
+  compile 'com.google.protobuf:protobuf-java:3.0.0'
+  compile 'io.grpc:grpc-stub:1.16.1'
+  compile 'io.grpc:grpc-protobuf:1.16.1'
+  if (JavaVersion.current().isJava9Compatible()) {
+    // Workaround for @javax.annotation.Generated
+    // see: https://github.com/grpc/grpc-java/issues/3633
+    compile 'javax.annotation:javax.annotation-api:1.3.1'
+  }
+
+  testCompile 'junit:junit:4.12'
 }
 
 protobuf {
@@ -57,8 +76,8 @@ protobuf {
     }
   }
   generateProtoTasks {
-    all()*.plugins {
-      grpc {}
+    ofSourceSet('main')*.plugins {
+      grpc { }
     }
   }
 }
@@ -89,9 +108,11 @@ def compile_java(module, loc):
 def build_module(module):
     java, python = module_names(module)
 
-    shutil.rmtree(java)
+    if osp.exists(java):
+        shutil.rmtree(java)
     os.mkdir(java)
-    shutil.rmtree(python)
+    if osp.exists(python):
+        shutil.rmtree(python)
     os.mkdir(python)
 
     compile_java(module, java)
