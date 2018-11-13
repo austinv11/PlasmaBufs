@@ -3,7 +3,7 @@ import os.path as osp
 import shutil
 import sys
 from glob import glob
-from subprocess import call
+from subprocess import call, Popen, PIPE
 
 """
 Builds python and java bindings for gRPC protobuf services declared in modules in the proto directory.
@@ -16,23 +16,34 @@ def module_names(module):
 
 def compile_python(module, loc):
     # Dependencies
-    call(["python3", "-m", "venv", "venv"])
+    call([sys.executable, "-m", "venv", "venv"])
 
-    if sys.platform == 'win32':
-        call(["venv\Scripts\\activate"])
-    else:
-        call(["source", "activate", "venv/bin/activate"])
+    with Popen("base" if sys.platform != 'win32' else 'cmd', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE,
+               encoding='utf8') as p:
+        if sys.platform == 'win32':
+            cmd = "venv\\Scripts\\activate"
+        else:
+            cmd = "source activate venv/bin/activate"
 
-    call(["pip", "install", "grpcio-tools"])
+        p.stdin.write(cmd + "\n")
+        p.stdin.write(sys.executable + ' -m pip install grpcio-tools\n')
+
+        # FIXME
+        to_exec = " ".join([sys.executable,
+                            "-m",
+                            "grpc_tools.protoc",
+                            "-I" + osp.join("proto", module),
+                            "--python_out=" + loc,
+                            "--grpc_python_out=" + loc]
+                           + glob(osp.join("proto", module, "*.proto")))
+
+        p.stdin.write(to_exec)
+
+        p.stdin.flush()
+        p.communicate()
+        p.wait()
+
     # call(["pip", "install", "googleapis-common-protos"])
-
-    call(["python",
-          "-m",
-          "grpc_tools.protoc",
-          "-I" + osp.join("proto", module),
-          "--python_out=" + loc,
-          "--grpc_python_out=" + loc]
-         + glob(osp.join("proto", module, "*.proto")))
 
 
 GRADLE_TEMPLATE = """
@@ -88,7 +99,8 @@ def compile_java(module, loc):
     shutil.copy(osp.join("gradle", "gradlew"), osp.join(loc, "gradlew"))
     shutil.copy(osp.join("gradle", "gradlew.bat"), osp.join(loc, "gradlew.bat"))
     os.makedirs(osp.join(loc, "gradle", "wrapper"), exist_ok=True)
-    shutil.copy(osp.join("gradle", "gradle-wrapper.properties"), osp.join(loc, "gradle", "wrapper", "gradle-wrapper.properties"))
+    shutil.copy(osp.join("gradle", "gradle-wrapper.properties"),
+                osp.join(loc, "gradle", "wrapper", "gradle-wrapper.properties"))
     shutil.copy(osp.join("gradle", "gradle-wrapper.jar"), osp.join(loc, "gradle", "wrapper", "gradle-wrapper.jar"))
 
     with open(osp.join(loc, "settings.gradle"), 'w') as f:
